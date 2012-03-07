@@ -261,7 +261,8 @@ void catch_alarm(int sig) {
 
 
 void usend(int dest, const char *message, int len) {
-    double delay = MINDELAY + (MAXDELAY-MINDELAY) * ((double) rand()) / RAND_MAX;
+    //double delay = MINDELAY + (MAXDELAY-MINDELAY) * ((double) rand()) / RAND_MAX;
+    double delay = 100000;
     struct timeval tim;
     struct message *new;
 

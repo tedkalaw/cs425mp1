@@ -45,6 +45,6 @@ extern pthread_mutex_t member_lock;
 #define MINDELAY    500000      /* 500ms */
 #define MAXDELAY    10000000    /* 10s */
 
-#define P_DROP      0.2         /* probability that a packet is dropped */
+#define P_DROP      0.0         /* probability that a packet is dropped */
 
 #endif
