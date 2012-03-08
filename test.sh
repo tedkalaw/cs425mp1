@@ -1,1 +1,1 @@
-make clean && make && ./chat
+make clean && make && clear && ./chat

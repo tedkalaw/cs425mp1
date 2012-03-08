@@ -86,15 +86,19 @@ void multicast(const char *message) {
 }
 
 
+/*
+ * Checks if a given message is deliverable; returns 0 if it IS NOT currently 
+ * deliverable, and returns the new timestamp value of the PID that sent the
+ * message if it IS deliverable
+ */
 int is_deliverable(const char* message){
   tag_t* tag = (tag_t*)message;
   timestamp_t* cur;
   int pid = tag->pid;
-
   int i, update=0;
-  message += sizeof(tag_t);
+
+  cur = (timestamp_t*)(tag+1);
   for(i=0; i<tag->length; i++){
-    cur = (timestamp_t*)message;
     int val = g_hash_table_lookup(hash, cur->pid);
     //this is the special case where we check if the one we got is +1
     if(pid == cur->pid){
@@ -104,18 +108,15 @@ int is_deliverable(const char* message){
       else return 0;
     }
     else {
-      if(val < cur->seq_number){
+      if(val <= cur->seq_number){
         return 0;
       }
     }
-    message += sizeof(timestamp_t);
+    cur++;
   }
 
   return update;
 }
-
-
-  //first, check if the value for 
 
 
 //returns new head of list
@@ -125,6 +126,7 @@ GSList* modified_delivery(GSList* queue, const char* message, int new_value){
   int length = cur->length;
   deliver(cur->pid, message + sizeof(tag_t) + (sizeof(timestamp_t) * length));
   g_hash_table_insert(hash, cur->pid, new_value);
+  g_slist_append(received, message);
   return g_slist_remove(queue, message);
 }
 
@@ -164,11 +166,9 @@ void deliver_tagged_message(int source, const char* message, int len){
     //regardless of whether or not it's deliverable, we add to queue
     holdback_queue = g_slist_append(holdback_queue, new_message);
 
-    GSList* head;
-    head = holdback_queue;
-    gboolean adding = TRUE;
     tag_t* cur;
-    head = holdback_queue;
+    GSList* head = holdback_queue;
+
     int new_value=0;
     while(head != NULL){
       cur = (tag_t*)(head->data);
