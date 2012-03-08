@@ -17,6 +17,8 @@ typedef struct{
 } tag_t;
 
 //TODO: interesting case...relationship between timestamp length and validity?
+//TODO: case where a new process joins - what happens to its timestamps?
+//that is to say, how does it initialize its timestamps?
 
 //Data structures
 int seq_number = 0;
@@ -93,15 +95,20 @@ int is_deliverable(const char* message){
   message += sizeof(tag_t);
   for(i=0; i<tag->length; i++){
     cur = (timestamp_t*)message;
-    int val = g_hash_table_lookup(hash, pid);
+    int val = g_hash_table_lookup(hash, cur->pid);
     //this is the special case where we check if the one we got is +1
-    if((val+1) == cur->seq_number){
-      update = cur->seq_number;
-      continue;
+    if(pid == cur->pid){
+      if((val+1) == cur->seq_number){
+        update = cur->seq_number;
+      }
+      else return 0;
     }
-    else{
-      return 0;
+    else {
+      if(val < cur->seq_number){
+        return 0;
+      }
     }
+    message += sizeof(timestamp_t);
   }
 
   return update;
@@ -148,11 +155,15 @@ void print_timestamp(GSList* node){
 
 
 void deliver_tagged_message(int source, const char* message, int len){
-    //regardless of whether or not it's deliverable, we add to queue
+    //IF WE DON'T COPY THIS, MESSAGE WILL KEEP CHANGING
+    //that is, it'll take on the value of the newly recv msg
+    //I CAN'T REMEMBER C SO WILL HAVE TO ASK THE TA
     char* new_message = malloc(len);
     memcpy(new_message, message, len);
-    holdback_queue = g_slist_append(holdback_queue, new_message);
     
+    //regardless of whether or not it's deliverable, we add to queue
+    holdback_queue = g_slist_append(holdback_queue, new_message);
+
     GSList* head;
     head = holdback_queue;
     gboolean adding = TRUE;
