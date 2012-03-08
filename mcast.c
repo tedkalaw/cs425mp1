@@ -32,7 +32,7 @@ void multicast_init(void) {
 
 void atomic_seq_inc(){
     pthread_mutex_lock(&member_lock);
-    g_hash_table_insert(hash, my_id, ++seq_number);
+    ++seq_number;
     pthread_mutex_unlock(&member_lock);
 }
 
@@ -59,7 +59,10 @@ void multicast(const char *message) {
     while(keys != NULL){
       cur = (timestamp_t*)to_send;
       cur->pid = keys->data;
-      cur->seq_number = g_hash_table_lookup(hash, keys->data);
+      if(cur->pid == my_id)
+        cur->seq_number = seq_number;
+      else
+        cur->seq_number = g_hash_table_lookup(hash, keys->data);
       to_send += sizeof(timestamp_t);
       keys = keys->next;
     }
@@ -82,7 +85,7 @@ gboolean comp_vectors(const char* vector1, const char* vector2){
   return TRUE;
 }
 
-void is_deliverable(const char* message){
+int is_deliverable(const char* message){
   tag_t* tag = (tag_t*)message;
   timestamp_t* cur;
   int pid = tag->pid;
@@ -90,55 +93,72 @@ void is_deliverable(const char* message){
   debugprintf("PID: %d, Length: %d\n", pid, length);
 
   int i;
+  int update=0;
   message += sizeof(tag_t);
   for(i=0; i<length; i++){
     cur = (timestamp_t*)message;
+    int val = g_hash_table_lookup(hash, pid);
     //this is the special case where we check if the one we got is +1
-    if(cur->pid == pid){
-      printf("In this item: %d\n", cur->seq_number);
-      printf("Our value: %d\n", g_hash_table_lookup(hash, pid));
+    printf("In this item: %d\n", cur->seq_number);
+    printf("Our value: %d\n", val);
+    if((val+1) == cur->seq_number){
+      update = cur->seq_number;
+      debugprintf("Matched!\n");
+      continue;
     }
     else{
-
+      return 0;
     }
-
   }
+
+  return update;
+}
+
 
   //first, check if the value for 
 
 
+//returns new head of list
+GSList* modified_delivery(GSList* queue, const char* message, int new_value){
+  tag_t* cur;
+  cur = (tag_t*)message;
+  int length = cur->length;
+  deliver(cur->pid, message + sizeof(tag_t) + (sizeof(timestamp_t) * length));
+  g_hash_table_insert(hash, cur->pid, new_value);
+  return g_slist_remove(queue, message);
 }
+
 //make sure that when a new process joins, that it doesn't wait for msgs it
 //doesn't need
 void deliver_tagged_message(int source, const char* message, int len){
     //regardless of whether or not it's deliverable, we add to queue
-    g_slist_append(holdback_queue, message);
-
-
+    holdback_queue = g_slist_append(holdback_queue, message);
+    
     GSList* head;
+    head = holdback_queue;
     gboolean adding = TRUE;
-    int pid;
     tag_t* cur;
-    while(adding){
-      /*
-      head = holdback_queue;
-      while(head != NULL){
-        cur = (tag_t*)(head->data);
-        pid = head->pid;
-        if(delivers){
-          deliver
-          continue;
-        }
+    head = holdback_queue;
+    int new_value=0;
+    while(head != NULL){
+      cur = (tag_t*)(head->data);
+      if(new_value = is_deliverable(head->data)){
+        holdback_queue = modified_delivery(head, head->data, new_value);
+        debugprintf("It delivered\n");
       }
-      */
-      adding = FALSE;
+      head = holdback_queue;
     }
 
-    is_deliverable(message);
+    /*
+    if(is_deliverable(message)){
+      holdback_queue = g_slist_remove(holdback_queue, head);
+      debugprintf("This is deliverable\n");
+    }
+    */
     
     //so it works
-    message += (sizeof(tag_t) + (sizeof(timestamp_t) * len));
-    deliver(source, message);
+    //message += (sizeof(tag_t) + (sizeof(timestamp_t) * len));
+    //deliver(source, message);
 }
 
 void receive(int source, const char *message, int len) {
