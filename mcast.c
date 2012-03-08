@@ -5,6 +5,7 @@
 #include <glib.h>
 
 #include "mp1.h"
+
 typedef struct{
   int pid;
   int seq_number;
@@ -24,6 +25,7 @@ int* vector_timestamp;
 GHashTable* hash = NULL;
 GSList* holdback_queue = NULL;
 GSList* received = NULL;
+pthread_mutex_t queue_access;
 
 void multicast_init(void) {
     unicast_init();
@@ -81,29 +83,20 @@ void multicast(const char *message) {
     //free(to_send);
 }
 
-gboolean comp_vectors(const char* vector1, const char* vector2){
-  return TRUE;
-}
 
 int is_deliverable(const char* message){
   tag_t* tag = (tag_t*)message;
   timestamp_t* cur;
   int pid = tag->pid;
-  int length = tag->length;
-  debugprintf("PID: %d, Length: %d\n", pid, length);
 
-  int i;
-  int update=0;
+  int i, update=0;
   message += sizeof(tag_t);
-  for(i=0; i<length; i++){
+  for(i=0; i<tag->length; i++){
     cur = (timestamp_t*)message;
     int val = g_hash_table_lookup(hash, pid);
     //this is the special case where we check if the one we got is +1
-    printf("In this item: %d\n", cur->seq_number);
-    printf("Our value: %d\n", val);
     if((val+1) == cur->seq_number){
       update = cur->seq_number;
-      debugprintf("Matched!\n");
       continue;
     }
     else{
@@ -128,11 +121,37 @@ GSList* modified_delivery(GSList* queue, const char* message, int new_value){
   return g_slist_remove(queue, message);
 }
 
+//The next two functions are for debugging purposes
+void print_queue_vectors(GSList* queue){
+  while(queue != NULL){
+    print_timestamp(queue);
+    queue = queue->next;
+  }
+}
+void print_timestamp(GSList* node){
+  tag_t* cur;
+  char* message = node->data;
+  cur = (tag_t*)(message);
+  int length = cur->length;
+  message += sizeof(tag_t);
+  timestamp_t* timestamp;
+  int i;
+  for(i=0; i<length; i++){
+    timestamp = (timestamp_t*)(message);
+    debugprintf("<%d - %d> ", timestamp->pid, timestamp ->seq_number);
+    message += sizeof(timestamp_t);
+  }
+  debugprintf("\n");
+}
 //make sure that when a new process joins, that it doesn't wait for msgs it
 //doesn't need
+
+
 void deliver_tagged_message(int source, const char* message, int len){
     //regardless of whether or not it's deliverable, we add to queue
-    holdback_queue = g_slist_append(holdback_queue, message);
+    char* new_message = malloc(len);
+    memcpy(new_message, message, len);
+    holdback_queue = g_slist_append(holdback_queue, new_message);
     
     GSList* head;
     head = holdback_queue;
@@ -142,42 +161,27 @@ void deliver_tagged_message(int source, const char* message, int len){
     int new_value=0;
     while(head != NULL){
       cur = (tag_t*)(head->data);
-      if(new_value = is_deliverable(head->data)){
-        holdback_queue = modified_delivery(head, head->data, new_value);
-        debugprintf("It delivered\n");
+      new_value = is_deliverable(head->data);
+      if(new_value){
+        holdback_queue = modified_delivery(holdback_queue, head->data, new_value);
+        head = holdback_queue;
       }
-      head = holdback_queue;
+      else{
+        head = head->next;
+      }
     }
-
-    /*
-    if(is_deliverable(message)){
-      holdback_queue = g_slist_remove(holdback_queue, head);
-      debugprintf("This is deliverable\n");
-    }
-    */
-    
-    //so it works
-    //message += (sizeof(tag_t) + (sizeof(timestamp_t) * len));
-    //deliver(source, message);
 }
 
 void receive(int source, const char *message, int len) {
     //check to make sure that string is correctly null terminated
-    assert(message[len-1] == 0);
+    //assert(message[len-1] == 0);
     tag_t* tag = (tag_t*)message;
     timestamp_t* cur;
     int num_members = tag->length;
-    char* mover = message+(sizeof(tag_t));
     int i;
-    for(i=0; i<num_members; i++){
-      cur = (timestamp_t*)mover;
-      //we don't update values until later
-      //g_hash_table_insert(hash, cur->pid, cur->seq_number);
-      debugprintf("%d: %d\n", cur->pid, cur->seq_number);
-      mover += sizeof(timestamp_t);
-    }
 
-    deliver_tagged_message(source, message, mcast_num_members);
+
+    deliver_tagged_message(source, message, len);
 }
 
 void mcast_join(int member) {
